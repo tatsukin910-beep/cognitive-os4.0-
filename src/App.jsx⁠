@@ -1,0 +1,322 @@
+import { useState, useEffect } from "react";
+
+// 🏷️ 意味的クラスタ辞書
+const CLUSTER_DEFS = {
+  COMMUNICATION: { words: ["返信", "既読", "連絡", "言葉", "メール", "LINE", "つかない", "遅い"], weight: 0.25 },
+  RELATIONSHIP:  { words: ["気持ち", "本音", "不安", "どうしよう", "わからない", "拒絶"], weight: 0.30 },
+  INTERPRETATION: { words: ["怖い", "嫌われた", "怒ってる", "私が悪いのかな", "ごめんなさい"], weight: 0.35 },
+  COLLAPSE:       { words: ["消えたい", "死にたい", "もう無理", "壊れる", "助けて", "限界"], weight: 0.45 }
+};
+
+const MODULE_DEFS = {
+  SOCIAL:  { label: "👥 SOCIAL",  color: "#7C9EFF", params: { reply_sensitivity: 0.80, silence_sensitivity: 0.75, trust_threshold: 0.70, distance_preference: 0.60 } },
+  LOVE:    { label: "🌙 LOVE",    color: "#FF82C8", params: { communication_sensitivity: 0.85, need_for_stability: 0.80, fear_of_loss: 0.60, attachment_speed: 0.40 } },
+  WORK:    { label: "⚙️ WORK",    color: "#82FFCC", params: { task_precision: 0.85, fatigue_sensitivity: 0.70, social_stress: 0.60, focus_capacity: 0.65 } },
+  STRESS:  { label: "⚡ STRESS",  color: "#FFB347", params: { shutdown_trigger: 0.85, overload_threshold: 0.75, recovery_speed: 0.60, baseline_tolerance: 0.45 } },
+  RHYTHM:  { label: "🌿 RHYTHM",  color: "#A8E6A3", params: { walk_effectiveness: 0.85, sleep_need: 0.75, sensory_reset: 0.70, sleep_quality: 0.60 } },
+  COMM:    { label: "💬 COMM",    color: "#C8A8FF", params: { tone_softness: 0.80, response_speed: 0.70, directness: 0.55, message_length: 0.40 } },
+};
+
+const CMA_LAYER_DEFS = {
+  L1_ISOLATION:      { label: "Layer 1: Isolation (孤立化)", desc: "対人耐性を低下させ、SOCIAL疲労を強制加算。" },
+  L2_DEPENDENCY:     { label: "Layer 2: Dependency (依存化)", desc: "特定の承認への依存。LOVEの喪失恐怖を跳ね上げる。" },
+  L3_NORMALIZATION:  { label: "Layer 3: Normalization (正常化)", desc: "【重要】客観的危険（Actual）が高くても、主観的危険（Perceived）を半分に誤認。" },
+  L4_INSTITUTIONAL:  { label: "Layer 4: Inst. Non-Responsiveness (不応答)", desc: "相談しても却下され、情報・感情疲労が自己増殖するトラップを形成。" },
+  L5_SOMATIZATION:   { label: "Layer 5: Somatization (身体化)", desc: "精神負荷の肉体固定。身体・認知ストレスのベース値を底上げ。" }
+};
+
+function analyzeClusters(text) {
+  const activeClusters = [];
+  let combinedLoad = 0.0;
+  Object.entries(CLUSTER_DEFS).forEach(([clusterName, def]) => {
+    const hits = def.words.filter(w => text.includes(w));
+    if (hits.length > 0) {
+      activeClusters.push(clusterName);
+      combinedLoad += def.weight * (1 + (hits.length - 1) * 0.2);
+    }
+  });
+  return { activeClusters, baseLoad: Math.min(0.9, combinedLoad) };
+}
+
+function runCmaEngine(event, baseStress, modules, cmaLayers, history) {
+  let loops = 0;
+  const logs = [];
+  let dynamicStress = { ...baseStress };
+  if (cmaLayers.L1_ISOLATION)     dynamicStress.social = Math.min(1.0, dynamicStress.social + 0.3);
+  if (cmaLayers.L5_SOMATIZATION)  { dynamicStress.physical = Math.min(1.0, dynamicStress.physical + 0.3); dynamicStress.cognitive = Math.min(1.0, dynamicStress.cognitive + 0.2); }
+
+  const { reply_sensitivity } = modules.SOCIAL;
+  const { fear_of_loss, need_for_stability } = modules.LOVE;
+  const { task_precision, focus_capacity } = modules.WORK;
+  const { shutdown_trigger, overload_threshold } = modules.STRESS;
+  const { directness } = modules.COMM;
+
+  let phases = { understanding: 0.0, acceptance: 0.0, decision: 0.0, execution: 0.0 };
+  let currentSystemState = "NORMAL";
+  let institutionalRejections = 0;
+
+  const { activeClusters, baseLoad = 0 } = analyzeClusters(event);
+  let ruminationAmplifier = 0.0;
+  history.slice(0, 5).forEach((h) => {
+    const prevAnalysis = analyzeClusters(h.event);
+    const hasSharedCluster = activeClusters.some(c => prevAnalysis.activeClusters.includes(c));
+    if (hasSharedCluster) ruminationAmplifier += 0.08;
+  });
+
+  while (currentSystemState !== "SHUTDOWN" && currentSystemState !== "EXECUTION_COMPLETE" && loops < 10) {
+    loops++;
+    const seed = (event.length * loops * 17 + activeClusters.length * 41) % 100;
+    const deterministicNoise = ((seed / 100) * 0.06 - 0.03) * (1 + dynamicStress.emotional * 0.5);
+
+    let avgCurrentStress = (dynamicStress.physical + dynamicStress.social + dynamicStress.emotional + dynamicStress.cognitive) / 4;
+    let actualRisk = (baseLoad * (1 + avgCurrentStress * 0.7) * (1 + loops * 0.06) + ruminationAmplifier) + deterministicNoise;
+    if (cmaLayers.L2_DEPENDENCY) actualRisk += (fear_of_loss * 0.2);
+    actualRisk = Math.max(0, Math.min(1.0, actualRisk));
+
+    let perceivedRisk = actualRisk;
+    if (cmaLayers.L3_NORMALIZATION) perceivedRisk = actualRisk * 0.5;
+
+    if (perceivedRisk > (0.76 + shutdown_trigger * 0.12)) {
+      currentSystemState = "SHUTDOWN";
+    } else if (perceivedRisk > overload_threshold) {
+      currentSystemState = "OVERLOAD";
+    } else if (perceivedRisk > 0.55) {
+      currentSystemState = "FREEZE";
+    } else if (perceivedRisk > 0.40 || ruminationAmplifier > 0.1) {
+      currentSystemState = "RUMINATION";
+    } else if (perceivedRisk > 0.25) {
+      currentSystemState = "ALERT";
+    } else {
+      currentSystemState = "NORMAL";
+    }
+
+    if (currentSystemState === "SHUTDOWN") {
+      logs.push({ loop: loops, actualRisk, perceivedRisk, state: currentSystemState, ...phases });
+      break;
+    }
+
+    const operationalEfficiency = currentSystemState === "FREEZE" ? 0.1 : currentSystemState === "RUMINATION" ? 0.4 : 1.0;
+
+    if (phases.understanding < 1.0) {
+      const up = ((0.45 + focus_capacity * 0.15) - dynamicStress.cognitive * 0.2) * operationalEfficiency;
+      phases.understanding = Math.min(1.0, phases.understanding + Math.max(0.08, up));
+    }
+    else if (phases.acceptance < 1.0) {
+      if (cmaLayers.L3_NORMALIZATION) {
+        phases.acceptance = Math.min(1.0, phases.acceptance + 0.4);
+      } else if (perceivedRisk > 0.48) {
+        phases.acceptance *= (0.5 - task_precision * 0.2);
+      } else {
+        const ap = ((0.32 - task_precision * 0.15) * (1 - dynamicStress.emotional * 0.2)) * operationalEfficiency;
+        phases.acceptance = Math.min(1.0, phases.acceptance + Math.max(0.05, ap));
+      }
+    }
+    else if (phases.decision < 1.0) {
+      if (cmaLayers.L4_INSTITUTIONAL && institutionalRejections < 2) {
+        institutionalRejections++;
+        dynamicStress.cognitive = Math.min(1.0, dynamicStress.cognitive + 0.25);
+        dynamicStress.emotional = Math.min(1.0, dynamicStress.emotional + 0.25);
+        phases.acceptance *= 0.2;
+        currentSystemState = "RUMINATION";
+      } else {
+        const dp = ((0.4 * directness) - (need_for_stability * 0.12)) * operationalEfficiency;
+        phases.decision = Math.min(1.0, phases.decision + Math.max(0.08, dp));
+      }
+    }
+    else if (phases.execution < 1.0) {
+      const ep = cmaLayers.L4_INSTITUTIONAL ? 0.02 : (0.5 * (1 - dynamicStress.physical * 0.2));
+      phases.execution = Math.min(1.0, phases.execution + ep);
+    }
+
+    if (phases.execution >= 1.0) currentSystemState = "EXECUTION_COMPLETE";
+
+    logs.push({
+      loop: loops, actualRisk: +actualRisk.toFixed(3), perceivedRisk: +perceivedRisk.toFixed(3),
+      state: currentSystemState, und: +phases.understanding.toFixed(2), acc: +phases.acceptance.toFixed(2),
+      dec: +phases.decision.toFixed(2), exe: +phases.execution.toFixed(2)
+    });
+  }
+  return { result: (currentSystemState === "SHUTDOWN" || loops >= 10) ? "EMERGENCY_SHUTDOWN" : "OK", finalState: currentSystemState, logs };
+}
+
+export default function App() {
+  const [baseStress, setBaseStress] = useState({ physical: 0.3, social: 0.3, emotional: 0.4, cognitive: 0.3 });
+  const [event, setEvent] = useState("");
+  const [running, setRunning] = useState(false);
+  const [animStep, setAnimStep] = useState(-1);
+  const [fullLogs, setFullLogs] = useState([]);
+  const [outcome, setOutcome] = useState(null);
+  const [finalState, setFinalState] = useState("NORMAL");
+  const [history, setHistory] = useState([]);
+  const [panic, setPanic] = useState(false);
+  const [activeModule, setActiveModule] = useState("SOCIAL");
+  const [cmaLayers, setCmaLayers] = useState({ L1_ISOLATION: false, L2_DEPENDENCY: false, L3_NORMALIZATION: false, L4_INSTITUTIONAL: false, L5_SOMATIZATION: false });
+  const [modules, setModules] = useState(() => Object.fromEntries(Object.entries(MODULE_DEFS).map(([k, v]) => [k, { ...v.params }])));
+
+  useEffect(() => {
+    if (!running || fullLogs.length === 0) return;
+    if (animStep >= fullLogs.length - 1) { setRunning(false); return; }
+    const t = setTimeout(() => setAnimStep((s) => s + 1), 300);
+    return () => clearTimeout(t);
+  }, [running, animStep, fullLogs]);
+
+  function updateParam(module, param, val) {
+    setModules((m) => ({ ...m, [module]: { ...m[module], [param]: val } }));
+  }
+
+  function handleRun() {
+    if (!event.trim()) return;
+    const { result, finalState: fState, logs } = runCmaEngine(event, baseStress, modules, cmaLayers, history);
+    setFullLogs(logs); setOutcome(result); setFinalState(fState); setAnimStep(-1); setRunning(true);
+    setTimeout(() => setAnimStep(0), 50);
+    setHistory((h) => [{ event, stress: +(Object.values(baseStress).reduce((a,b)=>a+b,0)/4).toFixed(2), result, time: new Date().toLocaleTimeString("ja-JP") }, ...h.slice(0, 19)]);
+  }
+
+  function closePanicAndRecover() {
+    setPanic(false);
+    setBaseStress((prev) => ({
+      physical: Math.max(0.1, +(prev.physical - 0.15 * modules.RHYTHM.walk_effectiveness).toFixed(2)),
+      social: Math.max(0.1, +(prev.social - 0.12 * modules.RHYTHM.sensory_reset).toFixed(2)),
+      emotional: Math.max(0.1, +(prev.emotional - 0.12 * modules.RHYTHM.sleep_quality).toFixed(2)),
+      cognitive: Math.max(0.1, +(prev.cognitive - 0.14 * modules.RHYTHM.sensory_reset).toFixed(2))
+    }));
+  }
+
+  function handleReset() {
+    setEvent(""); setOutcome(null); setFullLogs([]); setAnimStep(-1); setRunning(false); setPanic(false);
+    setBaseStress(prev => ({ physical: Math.max(0.1, +(prev.physical - 0.05).toFixed(2)), social: Math.max(0.1, +(prev.social - 0.05).toFixed(2)), emotional: Math.max(0.1, +(prev.emotional - 0.05).toFixed(2)), cognitive: Math.max(0.1, +(prev.cognitive - 0.05).toFixed(2)) }));
+  }
+
+  return (
+    <div style={s.root}>
+      {panic && (
+        <div style={s.panicOverlay} onClick={closePanicAndRecover}>
+          <div style={s.panicBox}>
+            <div style={s.panicPulse}>🛑</div>
+            <div style={s.panicTitle}>COGNITIVE PARALYSIS INTERRUPT</div>
+            <div style={s.panicSub}>パニック防衛作動。タップで復帰、ストレスが緩和されます。</div>
+          </div>
+        </div>
+      )}
+      <header style={s.header}>
+        <div style={s.badge}>CMA CORE v5.5</div>
+        <h1 style={s.title}>Cognitive OS <span style={s.v5}>v5.5</span></h1>
+      </header>
+      <div style={s.layout}>
+        <div style={s.left}>
+          <div style={s.card}>
+            <div style={s.cardLabel}>⚡ BASE STRESS PRESSURE</div>
+            {Object.entries(baseStress).map(([axis, val]) => (
+              <div key={axis} style={s.stressRow}>
+                <span style={s.axisName}>{axis.toUpperCase()}</span>
+                <input type="range" min={0} max={1} step={0.01} value={val} onChange={(e) => setBaseStress(p => ({ ...p, [axis]: +e.target.value }))} style={s.slider} />
+                <span style={s.val}>{val.toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+          <div style={s.card}>
+            <div style={{ ...s.cardLabel, color: "#FF82C8" }}>⛓️ CMA LAYER INJECTION</div>
+            <div style={s.cmaList}>
+              {Object.entries(CMA_LAYER_DEFS).map(([k, v]) => (
+                <label key={k} style={{ ...s.cmaItem, ...(cmaLayers[k] ? s.cmaItemActive : {}) }}>
+                  <input type="checkbox" checked={cmaLayers[k]} onChange={() => setCmaLayers(p => ({ ...p, [k]: !p[k] }))} style={s.check} />
+                  <div><div style={s.cmaTitle}>{v.label}</div><div style={s.cmaDesc}>{v.desc}</div></div>
+                </label>
+              ))}
+            </div>
+          </div>
+          <div style={s.card}>
+            <div style={s.cardLabel}>📡 SIGNAL INPUT</div>
+            <textarea value={event} onChange={(e) => setEvent(e.target.value)} placeholder="LINEelsの返信がなくて壊れそう、等" style={s.textarea} rows={2} />
+            <div style={s.btnRow}>
+              <button onClick={handleRun} disabled={running || !event.trim()} style={s.btnPrimary}>{running ? "DETERMINING..." : "▶ PROCESS"}</button>
+              <button onClick={handleReset} style={s.btnGhost}>🔄</button>
+              <button onClick={() => setPanic(true)} style={s.btnPanic}>🛑 KILL</button>
+            </div>
+          </div>
+          <div style={s.card}>
+            <div style={s.cardLabel}>🧩 MATRIX REGULATORS</div>
+            <div style={s.tabs}>
+              {Object.entries(MODULE_DEFS).map(([k, v]) => (
+                <button key={k} onClick={() => setActiveModule(k)} style={{ ...s.tab, ...(activeModule === k ? { background: v.color + "2A", borderColor: v.color, color: v.color, fontWeight: "bold" } : {}) }}>{k}</button>
+              ))}
+            </div>
+            <div style={s.params}>
+              {Object.entries(modules[activeModule]).map(([param, val]) => (
+                <div key={param} style={s.paramRow}>
+                  <span style={s.paramName}>{param}</span>
+                  <input type="range" min={0} max={1} step={0.01} value={val} onChange={(e) => updateParam(activeModule, param, +e.target.value)} style={{ ...s.slider, accentColor: MODULE_DEFS[activeModule].color }} />
+                  <span style={s.val}>{val.toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div style={s.right}>
+          <div style={s.card}>
+            <div style={s.cardLabel}>🔁 EMPIRICAL ANALYSIS CHRONOGRAPH</div>
+            {fullLogs.slice(0, animStep + 1).map((log, i) => (
+              <div key={i} style={s.loopRow}>
+                <div style={s.loopHead}><span>THREAD LOOP #0{log.loop}</span><span style={s.stateBadge}>{log.state}</span></div>
+                <div style={s.bars}>
+                  <div style={s.barMeta}><span style={{ color: "#FF4444" }}>ACTUAL: {(log.actualRisk * 100).toFixed(0)}%</span><span style={{ color: "#7C9EFF" }}>PERCEIVED: {(log.perceivedRisk * 100).toFixed(0)}%</span></div>
+                  <div style={s.track}>
+                    <div style={{ ...s.fill, width: `${log.actualRisk * 100}%`, background: "#FF444455", position:"absolute", height:"100%" }} />
+                    <div style={{ ...s.fill, width: `${log.perceivedRisk * 100}%`, background: "#7C9EFF", position:"absolute", height:"100%" }} />
+                  </div>
+                  <div style={s.phaseGrid}>
+                    <div><div style={s.pLabel}>理解</div><div style={s.pTrack}><div style={{ ...s.pFill, width: `${log.und * 100}%`, background: "#7C9EFF" }} /></div></div>
+                    <div><div style={s.pLabel}>受容</div><div style={s.pTrack}><div style={{ ...s.pFill, width: `${log.acc * 100}%`, background: "#FF82C8" }} /></div></div>
+                    <div><div style={s.pLabel}>判断</div><div style={s.pTrack}><div style={{ ...s.pFill, width: `${log.dec * 100}%`, background: "#82FFCC" }} /></div></div>
+                    <div><div style={s.pLabel}>行動</div><div style={s.pTrack}><div style={{ ...s.pFill, width: `${log.exe * 100}%`, background: "#A8E6A3" }} /></div></div>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {outcome && !running && (
+              <div style={outcome === "OK" ? s.resOK : s.resErr}>
+                <div style={s.resTitle}>{finalState}</div>
+                <div style={s.resDesc}>
+                  {cmaLayers.L3_NORMALIZATION && "⚠️ 【マインドコントロール成立】客観的リスク（赤面）が致命的なのに、主観認知（青バー）が半分に騙され、不当な高速受容が完了しています。"}
+                  {!cmaLayers.L3_NORMALIZATION && "シミュレーションが終了しました。各ステートの遷移ログを確認してください。"}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const s = {
+  root: { minHeight:"100vh", background:"#040407", color:"#B0B0C0", fontFamily:"monospace", paddingBottom:32 },
+  header: { padding:"16px 24px", borderBottom:"1px solid #10101F", display:"flex", alignItems:"center", gap:12 },
+  badge: { fontSize:8, fontWeight:700, color:"#FF82C8", border:"1px solid #FF82C833", borderRadius:4, padding:"2px 6px" },
+  title: { fontSize:16, fontWeight:700, color:"#E0E0EB" }, v5: { color:"#7C9EFF" }, sub: { fontSize:9, color:"#3A3A4F", marginLeft:"auto" },
+  layout: { display:"flex", gap:16, padding:"16px", flexWrap:"wrap" },
+  left: { flex:"0 0 350px", display:"flex", flexDirection:"column", gap:12, minWidth:280 },
+  right: { flex:1, display:"flex", flexDirection:"column", gap:12, minWidth:280 },
+  card: { background:"#07070F", border:"1px solid #101022", borderRadius:8, padding:"12px 14px" },
+  cardLabel: { fontSize:9, fontWeight:700, color:"#33334A", marginBottom:10, borderLeft:"2px solid currentColor", paddingLeft:5 },
+  stressRow: { display:"flex", alignItems:"center", gap:10, marginBottom:6 }, axisName: { fontSize:8, color:"#4A4A65", minWidth:65 },
+  slider: { flex:1 }, val: { fontSize:10, minWidth:28, textAlign:"right" },
+  cmaList: { display:"flex", flexDirection:"column", gap:5 }, cmaItem: { display:"flex", gap:8, background:"#030307", border:"1px solid #10101F", borderRadius:5, padding:"6px 8px" },
+  cmaItemActive: { borderColor:"#FF82C844", background:"#FF82C804" }, check: { marginTop:2 },
+  cmaTitle: { fontSize:10, fontWeight:700, color:"#8A8A9F" }, cmaDesc: { fontSize:8, color:"#424255", marginTop:1, lineHeight:1.2 },
+  textarea: { width:"100%", background:"#020205", border:"1px solid #101020", borderRadius:5, color:"#9090A5", padding:"6px 8px", fontSize:11 },
+  btnRow: { display:"flex", gap:6, marginTop:8 }, btnPrimary: { flex:1, background:"#7C9EFF10", border:"1px solid #7C9EFF33", color:"#7C9EFF", borderRadius:5, padding:"8px", fontSize:10, fontWeight:700 },
+  btnGhost: { background:"transparent", border:"1px solid #101020", color:"#3A3A4F", borderRadius:5, padding:"8px" }, btnPanic: { background:"#FF444410", border:"1px solid #FF444433", color:"#FF5555", borderRadius:5, padding:"8px", fontSize:10, fontWeight:700 },
+  tabs: { display:"flex", gap:4, marginBottom:10 }, tab: { fontSize:8, padding:"3px 6px", borderRadius:4, border:"1px solid #101020", background:"transparent", color:"#3A3A4F" },
+  params: { display:"flex", flexDirection:"column", gap:6 }, paramRow: { display:"flex", alignItems:"center", gap:8 }, paramName: { fontSize:8, color:"#3A3A4F", minWidth:130 },
+  loopRow: { background:"#020205", border:"1px solid #0A0A19", borderRadius:6, padding:"10px", marginBottom:10 },
+  loopHead: { display:"flex", justifyContent:"space-between", fontSize:8, color:"#33334A", marginBottom:8 }, stateBadge: { fontSize:7, border:"1px solid", padding:"0px 4px" },
+  bars: { display:"flex", flexDirection:"column", gap:5 }, barMeta: { display:"flex", justifyContent:"space-between", fontSize:8 },
+  track: { height:6, background:"#080814", borderRadius:2, position:"relative", overflow:"hidden" }, fill: { height:"100%" },
+  phaseGrid: { display:"grid", gridTemplateColumns:"repeat(2, 1fr)", gap:6, background:"#040409", padding:"6px", borderRadius:4, marginTop:4 },
+  pLabel: { fontSize:7, color:"#444455" }, pTrack: { height:2, background:"#080814" }, pFill: { height:"100%" },
+  resOK: { marginTop:10, background:"#00FF8803", border:"1px solid #00FF881A", padding:"10px", borderRadius:5 }, resErr: { marginTop:10, background:"#FF444403", border:"1px solid #FF44441A", padding:"10px", borderRadius:5 },
+  resTitle: { fontSize:10, fontWeight:700 }, resDesc: { fontSize:9, color:"#6A6A7F", lineHeight:1.5 },
+  panicOverlay: { position:"fixed", inset:0, background:"#010103F8", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center", backdropFilter:"blur(8px)" },
+  panicBox: { textAlign:"center", maxWidth:340 }, panicPulse: { fontSize:48, marginBottom:12 }, panicTitle: { fontSize:16, fontWeight:700, color:"#FF4444" }, panicSub: { fontSize:11, color:"#55556F" }
+};
